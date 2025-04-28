@@ -42,8 +42,20 @@ runs:
             \"title\": \"$TITLE\",
             \"description\": \"$DESCRIPTION\n\n[View Logs]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)\",
             \"color\": $COLOR,
+            \"fields\": [
+              {
+                \"name\": \"Repository\",
+                \"value\": \"$GITHUB_REPOSITORY\",
+                \"inline\": true
+              },
+              {
+                \"name\": \"Branch\",
+                \"value\": \"$GITHUB_REF_NAME\",
+                \"inline\": true
+              }
+            ],
             \"footer\": {
-              \"text\": \"Triggered by $GITHUB_ACTOR on branch $GITHUB_REF_NAME\"
+              \"text\": \"Triggered by $GITHUB_ACTOR\"
             },
             \"timestamp\": \"$(date --utc +%Y-%m-%dT%H:%M:%SZ)\"
           }]
