@@ -1,0 +1,56 @@
+name: "Discord Notification"
+description: "Sends a build status notification to a Discord webhook."
+author: "LawlGames"
+branding:
+  icon: "message-square"
+  color: "blue"
+
+inputs:
+  status:
+    description: "The status of the job (success, failure, cancelled)"
+    required: false
+    default: "failure"
+  webhook:
+    description: "The Discord Webhook URL"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Send Discord Notification
+      shell: bash
+      run: |
+        STATUS="${{ inputs.status }}"
+        WEBHOOK="${{ inputs.webhook }}"
+
+        if [ "$STATUS" == "success" ]; then
+          COLOR=65280 # Green
+          TITLE="✅ Build Succeeded"
+          DESCRIPTION="All checks passed successfully! 🎉"
+        elif [ "$STATUS" == "cancelled" ]; then
+          COLOR=16776960 # Yellow
+          TITLE="⚠️ Build Cancelled"
+          DESCRIPTION="The workflow was cancelled."
+        else
+          COLOR=16711680 # Red
+          TITLE="❌ Build Failed"
+          DESCRIPTION="There were errors during the build. ❗"
+        fi
+
+        PAYLOAD="{
+          \"embeds\": [{
+            \"title\": \"$TITLE\",
+            \"description\": \"$DESCRIPTION\n\n[View Logs]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)\",
+            \"color\": $COLOR,
+            \"footer\": {
+              \"text\": \"Triggered by $GITHUB_ACTOR on branch $GITHUB_REF_NAME\"
+            },
+            \"timestamp\": \"$(date --utc +%Y-%m-%dT%H:%M:%SZ)\"
+          }]
+        }"
+
+        curl -H "Content-Type: application/json" \
+             -X POST \
+             -d "$PAYLOAD" \
+             "$WEBHOOK"
+
