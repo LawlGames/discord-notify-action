@@ -21,8 +21,15 @@ This Action posts an embedded message to your Discord server with clear statuses
 📥 Inputs
 
 Name	Description	Required	Default
-status	Build status (success, failure, cancelled)	No	failure
-webhook	Discord Webhook URL	Yes	N/A
+status	Job status (success, failure, cancelled)	No	failure
+webhook	Discord Webhook URL; when empty the step warns and sends nothing	Yes	N/A
+title	What ran: Build, Deploy, Site publish…	No	Build
+environment	Environment it ran against (dev, prod); goes in the title ("Deploy to PROD succeeded") and a field. Prod successes get an orange bar	No	""
+version	Version built or deployed, shown as a field	No	""
+details	Extra Discord Markdown under the status line	No	""
+
+v3 adds title, environment, version and details. v2 callers keep working on v3 unchanged.
+
 🚀 Usage
 1. Add your Discord webhook URL as a GitHub Secret
 Go to your Discord channel → Edit Channel → Integrations → Create Webhook → Copy Webhook URL.
@@ -79,12 +86,21 @@ MIT License
 
 🎯 Quick Install
 yaml
-Copy
-Edit
-- uses: your-org/discord-notify-action@v1
+- uses: LawlGames/discord-notify-action@v3
   with:
     status: ${{ job.status }}
     webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+A deploy:
+
+- uses: LawlGames/discord-notify-action@v3
+  if: always()
+  with:
+    status: ${{ job.status }}
+    webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+    title: Deploy
+    environment: ${{ inputs.environment }}
+    version: ${{ inputs.image_version }}
 🧙‍♂️ That's it!
 Now your GitHub Actions will talk directly to Discord like a boss.
 Get notified instantly on success, failure, or cancellation 🚀
