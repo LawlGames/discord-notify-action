@@ -1,5 +1,5 @@
 name: "Discord Notification"
-description: "Sends a build status notification to a Discord webhook."
+description: "Sends a build, deploy or publish status notification to a Discord webhook."
 author: "LawlGames"
 branding:
   icon: "message-square"
@@ -11,58 +11,107 @@ inputs:
     required: false
     default: "failure"
   webhook:
-    description: "The Discord Webhook URL"
+    description: "The Discord Webhook URL. When empty, the step logs a warning and sends nothing."
     required: true
+  title:
+    description: "What ran, e.g. Build, Deploy, Site publish. Shown in the message title."
+    required: false
+    default: "Build"
+  environment:
+    description: "The environment it ran against, e.g. dev or prod. Shown in the title and as a field."
+    required: false
+    default: ""
+  version:
+    description: "The version it built or deployed. Shown as a field."
+    required: false
+    default: ""
+  details:
+    description: "Extra text added under the status line (Discord Markdown)."
+    required: false
+    default: ""
 
 runs:
   using: "composite"
   steps:
     - name: Send Discord Notification
       shell: bash
+      env:
+        STATUS: ${{ inputs.status }}
+        WEBHOOK: ${{ inputs.webhook }}
+        KIND: ${{ inputs.title }}
+        ENV_NAME: ${{ inputs.environment }}
+        VERSION: ${{ inputs.version }}
+        DETAILS: ${{ inputs.details }}
       run: |
-        STATUS="${{ inputs.status }}"
-        WEBHOOK="${{ inputs.webhook }}"
+        if [ -z "$WEBHOOK" ]; then
+          echo "::warning::No Discord webhook set; skipping the notification"
+          exit 0
+        fi
+
+        # Escapes a value for a JSON string (backslash, quote, newline, carriage return, tab)
+        json() {
+          local s=$1
+          s=${s//\\/\\\\}
+          s=${s//\"/\\\"}
+          s=${s//$'\n'/\\n}
+          s=${s//$'\r'/}
+          s=${s//$'\t'/ }
+          printf '%s' "$s"
+        }
+
+        KIND=${KIND:-Build}
+        WHAT=$KIND
+        if [ -n "$ENV_NAME" ]; then
+          ENV_UPPER=$(printf '%s' "$ENV_NAME" | tr '[:lower:]' '[:upper:]')
+          WHAT="$KIND to $ENV_UPPER"
+        fi
 
         if [ "$STATUS" == "success" ]; then
           COLOR=65280 # Green
-          TITLE="✅ Build Succeeded"
-          DESCRIPTION="All checks passed successfully! 🎉"
+          TITLE="✅ $WHAT succeeded"
+          DESCRIPTION="All steps passed. 🎉"
         elif [ "$STATUS" == "cancelled" ]; then
           COLOR=16776960 # Yellow
-          TITLE="⚠️ Build Cancelled"
+          TITLE="⚠️ $WHAT cancelled"
           DESCRIPTION="The workflow was cancelled."
         else
           COLOR=16711680 # Red
-          TITLE="❌ Build Failed"
-          DESCRIPTION="There were errors during the build. ❗"
+          TITLE="❌ $WHAT failed"
+          DESCRIPTION="There were errors. ❗"
         fi
+        # Prod gets an orange bar on success so it stands out from dev
+        if [ "$STATUS" == "success" ] && [[ "$ENV_NAME" =~ ^[Pp]rod ]]; then
+          COLOR=16753920
+        fi
+
+        if [ -n "$DETAILS" ]; then
+          DESCRIPTION="$DESCRIPTION"$'\n'"$DETAILS"
+        fi
+        DESCRIPTION="$DESCRIPTION"$'\n\n'"[View Logs]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+
+        FIELDS="{\"name\": \"Repository\", \"value\": \"$(json "$GITHUB_REPOSITORY")\", \"inline\": true}"
+        if [ -n "$ENV_NAME" ]; then
+          FIELDS="$FIELDS, {\"name\": \"Environment\", \"value\": \"$(json "$ENV_NAME")\", \"inline\": true}"
+        fi
+        if [ -n "$VERSION" ]; then
+          FIELDS="$FIELDS, {\"name\": \"Version\", \"value\": \"$(json "$VERSION")\", \"inline\": true}"
+        fi
+        FIELDS="$FIELDS, {\"name\": \"Branch\", \"value\": \"$(json "$GITHUB_REF_NAME")\", \"inline\": true}"
 
         PAYLOAD="{
           \"embeds\": [{
-            \"title\": \"$TITLE\",
-            \"description\": \"$DESCRIPTION\n\n[View Logs]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)\",
+            \"title\": \"$(json "$TITLE")\",
+            \"description\": \"$(json "$DESCRIPTION")\",
             \"color\": $COLOR,
-            \"fields\": [
-              {
-                \"name\": \"Repository\",
-                \"value\": \"$GITHUB_REPOSITORY\",
-                \"inline\": true
-              },
-              {
-                \"name\": \"Branch\",
-                \"value\": \"$GITHUB_REF_NAME\",
-                \"inline\": true
-              }
-            ],
+            \"fields\": [$FIELDS],
             \"footer\": {
-              \"text\": \"Triggered by $GITHUB_ACTOR\"
+              \"text\": \"Triggered by $(json "$GITHUB_ACTOR")\"
             },
-            \"timestamp\": \"$(date --utc +%Y-%m-%dT%H:%M:%SZ)\"
+            \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
           }]
         }"
 
-        curl -H "Content-Type: application/json" \
+        curl -sS -H "Content-Type: application/json" \
              -X POST \
              -d "$PAYLOAD" \
              "$WEBHOOK"
-
